@@ -138,9 +138,7 @@ class Storage(driver.Base):
         return [str(i.indexes[0].data) for i in itertools.chain(result)]
 
     
-
-
-
+    #DOCKER REGISTRY IMPLEMENTATION
 
     @lru.get
     def get_content(self, path):
