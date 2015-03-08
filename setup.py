@@ -5,7 +5,6 @@ try:
     import setuptools
 except ImportError:
     import distutils.core as setuptools
-#from distutils.core import setup
 
 __author__ = 'Milaw'
 __copyright__ = 'Copyright 2015'
