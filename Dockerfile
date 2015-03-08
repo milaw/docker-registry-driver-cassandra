@@ -16,7 +16,8 @@ RUN pip install blist \
 	cassandra-driver
 
 # Install docker-registry
-RUN pip install docker-registry docker-registry-driver-cassandra
+RUN pip install docker-registry 
+RUN pip install docker-registry-driver-cassandra
 
 ADD . /docker-registry-driver-cassandra
 
