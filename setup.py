@@ -8,7 +8,7 @@ except ImportError:
 
 __author__ = 'Milaw'
 __copyright__ = 'Copyright 2015'
-#__credits__ = []
+# __credits__ = []
 __version__ = '0.1.2'
 __maintainer__ = 'Milaw'
 __email__ = 'gmilaw@gmail.com'
@@ -26,7 +26,7 @@ setuptools.setup(
     maintainer=__maintainer__,
     maintainer_email=__email__,
     url=__url__,
-    download_url = __d__,
+    download_url=__d__,
     description=__description__,
     classifiers=['Development Status :: 3 - Alpha',
                  'Intended Audience :: Developers',
@@ -39,5 +39,7 @@ setuptools.setup(
     namespace_packages=['docker_registry', 'docker_registry.drivers'],
     packages=['docker_registry', 'docker_registry.drivers'],
     install_requires=open('./requirements.txt').read(),
-    zip_safe=True
+    zip_safe=True,
+    tests_require=open('./tests/requirements.txt').read(),
+    test_suite='nose.collector'
 )
