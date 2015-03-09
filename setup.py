@@ -9,7 +9,7 @@ except ImportError:
 __author__ = 'Milaw'
 __copyright__ = 'Copyright 2015'
 #__credits__ = []
-__version__ = '0.1.0'
+__version__ = '0.1.2'
 __maintainer__ = 'Milaw'
 __email__ = 'gmilaw@gmail.com'
 __title__ = 'docker-registry-driver-cassandra'
@@ -34,12 +34,10 @@ setuptools.setup(
                  'Operating System :: OS Independent',
                  'Topic :: Utilities'],
     platforms=['Independent'],
-    #license=open('./LICENSE').read(),
+    package_data = {'docker_registry': ['../config/*']},
+    license=open('./LICENSE').read(),
     namespace_packages=['docker_registry', 'docker_registry.drivers'],
     packages=['docker_registry', 'docker_registry.drivers'],
-    package_data = {'docker_registry': ['../config/*']},
-    install_requires=[
-        "docker-registry-core>=2,<3"
-    ],
+    install_requires=open('./requirements.txt').read(),
     zip_safe=True
 )

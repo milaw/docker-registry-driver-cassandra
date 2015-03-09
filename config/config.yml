@@ -192,7 +192,7 @@ elliptics:
     elliptics_addr_family: _env:ELLIPTICS_ADDR_FAMILY:2
 
 cassandra:
-    << *common
+    <<: *common
     storage: cassandra
     storage_path: _env:STORAGE_PATH:/registry
     cassandra_clusters_list: _env:CASSANDRA_CLUSTER_LIST
