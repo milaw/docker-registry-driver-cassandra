@@ -195,6 +195,8 @@ cassandra:
     <<: *common
     storage: cassandra
     storage_path: _env:STORAGE_PATH:/registry
+    loglevel: _env:LOGLEVEL:debug
+    debug: _env:DEBUG:false
     cassandra_clusters_list: _env:CASSANDRA_CLUSTER_LIST
     cassandra_cql_version: _env:CASSANDRA_CQL_VERSION
     cassandra_protocol_version: _env:CASSANDRA_PROTOCOL_VERSION

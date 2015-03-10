@@ -32,6 +32,9 @@ DEFAULT_SESSION_FETCH_SIZE = 5000
 
 logger = logging.getLogger(__name__)
 
+key="test"
+value="sucess"
+tag="first"
 
 class Storage(driver.Base):
 
@@ -112,21 +115,70 @@ class Storage(driver.Base):
                                default_retry_policy=DowngradingConsistencyRetryPolicy(),
                                reconnection_policy=ConstantReconnectionPolicy(20.0, 10))
         self.session = self.cluster.connect()
+        logger.debug("connected!")
+        
         # CREATE KEYSPACE
         query_ks = "CREATE KEYSPACE IF NOT EXISTS %s\
         WITH REPLICATION = { 'class' : 'SimpleStrategy', 'replication_factor' : 1 };" % DEFAULT_KEYSPACE
         self.session.execute(query_ks)
+        logger.debug("query KEYSPACE executed!")
+        
         # CREATE TABLE
         query_table = "CREATE TABLE IF NOT EXISTS %s (\
                 key varchar,\
-                value varchar,\
+                value blob,\
                 tag text, \
                 PRIMARY KEY (key) \
             ) WITH caching ='keys_only';" % DEFAULT_TABLE_NAME
         self.session.execute(query_table)
+        logger.debug("query TABLE executed!")
+        
+        query_insert = "\
+            INSERT INTO %s (key,value,tag) \
+            VALUES (%s,%s,%s) IF NOT EXISTS" % DEFAULT_TABLE_NAME, key, value, tag
+        self.session.execute(query_insert)
+        logger.debug("INSERT DONE")
+
+        query_select = "\
+            SELECT * FROM %s WHERE key IN (%s);" % DEFAULT_TABLE_NAME, key
+        results = self.session.execute(query_select)
+        
+        print results
+        
+    def create_schema(self):
+        # CREATE KEYSPACE
+        query_ks = "CREATE KEYSPACE IF NOT EXISTS %s\
+        WITH REPLICATION = { 'class' : 'SimpleStrategy', 'replication_factor' : 1 };" % DEFAULT_KEYSPACE
+        self.session.execute(query_ks)
+        logger.debug("query KEYSPACE executed!")
+        
+        # CREATE TABLE
+        query_table = "CREATE TABLE IF NOT EXISTS %s (\
+                key varchar,\
+                value blob,\
+                tag text, \
+                PRIMARY KEY (key) \
+            ) WITH caching ='keys_only';" % DEFAULT_TABLE_NAME
+        self.session.execute(query_table)
+        logger.debug("query TABLE executed!")
+        self.operations_donnees()        
+
+    def operations_donnees(self):
+        query = "\
+            INSERT INTO %s (key,value,tag) \
+            VALUES (%s,%s,%s) IF NOT EXISTS" % DEFAULT_TABLE_NAME, key, value, tag
+        self.session.execute(query)
+        logger.debug("INSERT DONE")
+
+        query = "\
+            SELECT * FROM %s WHERE key IN (%s);" % DEFAULT_TABLE_NAME, key
+        results = self.session.execute(query)
+        
+        print results
 
     def _init_path(self, path=None):
         path = self._root_path + path if path else self._root_path
+        logger.debug("Using path %s", path)
         return path
 
     def disconnect_to_cluster(self):
@@ -143,7 +195,6 @@ class Storage(driver.Base):
             raise exceptions.FileNotFoundError("No such file %s" % key)
 
     def data_read(self, path, offset=0, size=0):
-
         query = "SELECT first_name, last_name FROM " + DEFAULT_TABLE_NAME + " WHERE empID IN (105, 107, 104);"
         rows = self.session.execute(query)
         return
@@ -174,6 +225,7 @@ class Storage(driver.Base):
     @lru.get
     def get_content(self, path):
         path = self._init_path(path)
+        logger.debug("get_content %s ", path)
         try:
             return self.data_read(path)
         except Exception:
@@ -220,6 +272,7 @@ class Storage(driver.Base):
 
     def list_directory(self, path=None):
         path = self._init_path(path)
+        logger.debug("list_directory %s ",path)
         if not self.exists(path) and path:
             raise exceptions.FileNotFoundError(
                 'No such directory: \'{0}\''.format(path))
