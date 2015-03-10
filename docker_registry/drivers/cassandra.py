@@ -116,34 +116,7 @@ class Storage(driver.Base):
                                reconnection_policy=ConstantReconnectionPolicy(20.0, 10))
         self.session = self.cluster.connect()
         logger.debug("connected!")
-        
-        # CREATE KEYSPACE
-        query_ks = "CREATE KEYSPACE IF NOT EXISTS %s\
-        WITH REPLICATION = { 'class' : 'SimpleStrategy', 'replication_factor' : 1 };" % DEFAULT_KEYSPACE
-        self.session.execute(query_ks)
-        logger.debug("query KEYSPACE executed!")
-        
-        # CREATE TABLE
-        query_table = "CREATE TABLE IF NOT EXISTS %s (\
-                key varchar,\
-                value blob,\
-                tag text, \
-                PRIMARY KEY (key) \
-            ) WITH caching ='keys_only';" % DEFAULT_TABLE_NAME
-        self.session.execute(query_table)
-        logger.debug("query TABLE executed!")
-        
-        query_insert = "\
-            INSERT INTO %s (key,value,tag) \
-            VALUES (%s,%s,%s) IF NOT EXISTS" % DEFAULT_TABLE_NAME, key, value, tag
-        self.session.execute(query_insert)
-        logger.debug("INSERT DONE")
-
-        query_select = "\
-            SELECT * FROM %s WHERE key IN (%s);" % DEFAULT_TABLE_NAME, key
-        results = self.session.execute(query_select)
-        
-        print results
+        self.create_schema()
         
     def create_schema(self):
         # CREATE KEYSPACE
@@ -173,8 +146,8 @@ class Storage(driver.Base):
         query = "\
             SELECT * FROM %s WHERE key IN (%s);" % DEFAULT_TABLE_NAME, key
         results = self.session.execute(query)
-        
-        print results
+        logger.debug("SELECT DONE")
+
 
     def _init_path(self, path=None):
         path = self._root_path + path if path else self._root_path
