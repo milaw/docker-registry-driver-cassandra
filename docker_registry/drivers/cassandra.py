@@ -32,10 +32,6 @@ DEFAULT_SESSION_FETCH_SIZE = 5000
 
 logger = logging.getLogger(__name__)
 
-key="test"
-value="sucess"
-tag="first"
-
 class Storage(driver.Base):
 
     def __init__(self, path=None, config=None):
@@ -117,36 +113,38 @@ class Storage(driver.Base):
         self.session = self.cluster.connect()
         logger.debug("connected!")
         self.create_schema()
+        self.operations_donnees() 
         
     def create_schema(self):
-        # CREATE KEYSPACE
-        query_ks = "CREATE KEYSPACE IF NOT EXISTS %s\
-        WITH REPLICATION = { 'class' : 'SimpleStrategy', 'replication_factor' : 1 };" % DEFAULT_KEYSPACE
-        self.session.execute(query_ks)
+         # CREATE KEYSPACE
+        self.session.execute("""
+            CREATE KEYSPACE IF NOT EXISTS DockerKSpace
+            WITH REPLICATION = { 'class' : 'SimpleStrategy', 'replication_factor' : 1 };"
+        """)
         logger.debug("query KEYSPACE executed!")
         
         # CREATE TABLE
-        query_table = "CREATE TABLE IF NOT EXISTS %s (\
-                key varchar,\
-                value blob,\
-                tag text, \
-                PRIMARY KEY (key) \
-            ) WITH caching ='keys_only';" % DEFAULT_TABLE_NAME
-        self.session.execute(query_table)
-        logger.debug("query TABLE executed!")
-        self.operations_donnees()        
+        self.session.execute("""
+            REATE TABLE IF NOT EXISTS DockerKSpace.DockerImages (
+                key varchar,
+                value blob,
+                tag text,
+                PRIMARY KEY (key) 
+            ) WITH caching ='keys_only';
+        """)
 
     def operations_donnees(self):
-        query = "\
-            INSERT INTO %s (key,value,tag) \
-            VALUES (%s,%s,%s) IF NOT EXISTS" % DEFAULT_TABLE_NAME, key, value, tag
-        self.session.execute(query)
+        self.session.execute("""
+            INSERT INTO DockerKSpace.DockerImages (key,value,tag)
+            VALUES ("test","success","first") IF NOT EXISTS
+        """)
         logger.debug("INSERT DONE")
 
-        query = "\
-            SELECT * FROM %s WHERE key IN (%s);" % DEFAULT_TABLE_NAME, key
-        results = self.session.execute(query)
+        results = self.session.execute("""
+            SELECT * FROM DockerKSpace.DockerImages WHERE key IN ("test");
+        """)
         logger.debug("SELECT DONE")
+        print results
 
 
     def _init_path(self, path=None):
