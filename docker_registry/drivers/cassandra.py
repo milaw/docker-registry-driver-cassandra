@@ -4,6 +4,7 @@ from __future__ import absolute_import
 
 import itertools
 import logging
+import time
 
 # cassandra
 from cassandra.cluster import Cluster
@@ -110,9 +111,17 @@ class Storage(driver.Base):
                                auth_provider=auth_provider,
                                default_retry_policy=DowngradingConsistencyRetryPolicy(),
                                reconnection_policy=ConstantReconnectionPolicy(20.0, 10))
+        
+        self.metadata = self.cluster.metadata
         self.session = self.cluster.connect()
-        logger.debug("connected!")
+        
+        for host in self.metadata.all_hosts():
+            logger.info('Datacenter: %s; Host: %s',
+                host.datacenter, host.address)
+
         self.create_schema()
+        time.sleep(10)
+        #self.insert_data('test','success','first')
         self.operations_donnees() 
         
     def create_schema(self):
@@ -121,31 +130,40 @@ class Storage(driver.Base):
             CREATE KEYSPACE IF NOT EXISTS DockerKSpace
             WITH REPLICATION = { 'class' : 'SimpleStrategy', 'replication_factor' : 1 };"
         """)
-        logger.debug("query KEYSPACE executed!")
+        logger.debug("KEYSPACE executed!")
         
         # CREATE TABLE
         self.session.execute("""
             CREATE TABLE IF NOT EXISTS DockerKSpace.DockerImages (
                 key varchar,
-                value blob,
+                value text,
                 tag text,
                 PRIMARY KEY (key) 
             ) WITH caching ='keys_only';
         """)
+        logger.debug("TABLE executed!")
+
+    def insert_data(self, key, value, tag):
+        self.session.execute(
+            """
+            INSERT INTO DockerKSpace.DockerImages (key, value, tag)
+            VALUES (%(key)s, %(value)s, %(tag)s)
+            """
+            {'key': key, 'value': value, 'tag':tag}
+        ) 
 
     def operations_donnees(self):
         self.session.execute("""
-            INSERT INTO DockerKSpace.DockerImages (key,value,tag)
-            VALUES ("test","success","first") IF NOT EXISTS
+            INSERT INTO DockerKSpace.DockerImages (key, value, tag)
+            VALUES ('test','success','first') IF NOT EXISTS;
         """)
         logger.debug("INSERT DONE")
 
         results = self.session.execute("""
-            SELECT * FROM DockerKSpace.DockerImages WHERE key IN ("test");
+            SELECT * FROM DockerKSpace.DockerImages WHERE key = 'test');
         """)
         logger.debug("SELECT DONE")
-        print results
-
+        print "results : %s" % results       
 
     def _init_path(self, path=None):
         path = self._root_path + path if path else self._root_path
@@ -154,6 +172,8 @@ class Storage(driver.Base):
 
     def disconnect_to_cluster(self):
         self.cluster.shutdown()
+        self.session.shutdown()
+        logger.info('Connection closed')
 
     def data_find(self, tags):
         return
