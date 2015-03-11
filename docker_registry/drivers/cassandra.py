@@ -125,7 +125,7 @@ class Storage(driver.Base):
         
         # CREATE TABLE
         self.session.execute("""
-            REATE TABLE IF NOT EXISTS DockerKSpace.DockerImages (
+            CREATE TABLE IF NOT EXISTS DockerKSpace.DockerImages (
                 key varchar,
                 value blob,
                 tag text,
