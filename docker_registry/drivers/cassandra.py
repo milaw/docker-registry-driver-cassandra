@@ -5,6 +5,7 @@ from __future__ import absolute_import
 import itertools
 import logging
 import time
+import sys
 
 # cassandra
 from cassandra.cluster import Cluster
@@ -36,6 +37,7 @@ logger = logging.getLogger(__name__)
 class Storage(driver.Base):
 
     def __init__(self, path=None, config=None):
+        print 1
         # Turn on streaming support
         self.supports_bytes_range = True
         # Increase buffer size up to 640 Kb
@@ -120,15 +122,16 @@ class Storage(driver.Base):
                 host.datacenter, host.address)
 
         self.create_schema()
-        time.sleep(10)
-        #self.insert_data('test','success','first')
-        self.operations_donnees() 
-        
+        time.sleep(3)
+        self.insert_data('test','success','first')
+        self.select_data("test") 
+
     def create_schema(self):
+        print 2
          # CREATE KEYSPACE
         self.session.execute("""
             CREATE KEYSPACE IF NOT EXISTS DockerKSpace
-            WITH REPLICATION = { 'class' : 'SimpleStrategy', 'replication_factor' : 1 };"
+            WITH REPLICATION = { 'class' : 'SimpleStrategy', 'replication_factor' : 1 };
         """)
         logger.debug("KEYSPACE executed!")
         
@@ -144,41 +147,36 @@ class Storage(driver.Base):
         logger.debug("TABLE executed!")
 
     def insert_data(self, key, value, tag):
-        self.session.execute(
-            """
+        print 3
+        insert_statement = self.session.prepare("""
             INSERT INTO DockerKSpace.DockerImages (key, value, tag)
-            VALUES (%(key)s, %(value)s, %(tag)s)
-            """
-            {'key': key, 'value': value, 'tag':tag}
-        ) 
-
-    def operations_donnees(self):
-        self.session.execute("""
-            INSERT INTO DockerKSpace.DockerImages (key, value, tag)
-            VALUES ('test','success','first') IF NOT EXISTS;
+            VALUES (?, ?, ?);
         """)
-        logger.debug("INSERT DONE")
+        self.session.execute(insert_statement.bind((key, value, tag)))
+        logger.info("insert_data DONE")
 
+    def select_data(self, key):
+        print 4
         results = self.session.execute("""
-            SELECT * FROM DockerKSpace.DockerImages WHERE key = 'test');
+            SELECT * FROM DockerKSpace.DockerImages WHERE key = 'test';
         """)
-        logger.debug("SELECT DONE")
-        print "results : %s" % results       
+        #logger.debug("SELECT DONE")
+        print "results : %s", results       
 
     def _init_path(self, path=None):
+        print 5
         path = self._root_path + path if path else self._root_path
         logger.debug("Using path %s", path)
         return path
 
     def disconnect_to_cluster(self):
+        print 6
         self.cluster.shutdown()
         self.session.shutdown()
         logger.info('Connection closed')
 
-    def data_find(self, tags):
-        return
-
     def data_remove(self, key):
+        print 8
         fail = False
         query = "DELETE FROM " + DEFAULT_TABLE_NAME + " WHERE key IN ('" + key + "');"
         rows = self.session.execute(query)
@@ -186,11 +184,13 @@ class Storage(driver.Base):
             raise exceptions.FileNotFoundError("No such file %s" % key)
 
     def data_read(self, path, offset=0, size=0):
+        print 9
         query = "SELECT first_name, last_name FROM " + DEFAULT_TABLE_NAME + " WHERE empID IN (105, 107, 104);"
         rows = self.session.execute(query)
         return
 
     def data_write(self, key, value, tags):
+        print 10
         fail = False
         query = "INSERT INTO " + DEFAULT_TABLE_NAME + " (key,value,tag) VALUES (" + key + "," + value + "," + tag + ") IF NOT EXISTS"
         rows = self.session.execute(query)
@@ -198,14 +198,17 @@ class Storage(driver.Base):
             raise exceptions.UnspecifiedError("Index setting failed %s" % err)
 
     def data_append(self, key, content):
+        print 11
         fail = False
         if fail:
             raise exceptions.UnspecifiedError("Writing failed {0}".format(err))
 
     def data_write_file(self, path, content):
+        print 12
         return
 
     def data_find(self, tags):
+        print 13
         r = self._session.find_all_indexes(list(tags))
         r.wait()
         result = r.get()
@@ -215,6 +218,7 @@ class Storage(driver.Base):
 
     @lru.get
     def get_content(self, path):
+        print 20
         path = self._init_path(path)
         logger.debug("get_content %s ", path)
         try:
@@ -224,11 +228,14 @@ class Storage(driver.Base):
 
     @lru.set
     def put_content(self, path, content):
+        print 21
         path = self._init_path(path)
         logger.debug("put_content %s %d", path, len(content))
         return self.data_write_file(path, content)
 
     def stream_write(self, path, fp):
+        print 22
+        logger.debug("stream_write %s", path)
         first_chunk = True
         while True:
             try:
@@ -248,6 +255,7 @@ class Storage(driver.Base):
                 break
 
     def stream_read(self, path, bytes_range=None):
+        print 23
         logger.debug("read range %s from %s", str(bytes_range), path)
         path = self._init_path(path)
         if not self.exists(path):
@@ -262,6 +270,7 @@ class Storage(driver.Base):
             yield self.s_read(path, offset=offset, size=size)
 
     def list_directory(self, path=None):
+        print 24
         path = self._init_path(path)
         logger.debug("list_directory %s ",path)
         if not self.exists(path) and path:
@@ -272,6 +281,7 @@ class Storage(driver.Base):
             yield item
 
     def exists(self, path):
+        print 25
         path = self._init_path(path)
         logger.debug("Check existance of %s", path)
         try:
@@ -285,6 +295,7 @@ class Storage(driver.Base):
 
     @lru.remove
     def remove(self, path):
+        print 26
         path = self._init_path(path)
         try:
             for item in self.list_directory(path):
@@ -294,6 +305,7 @@ class Storage(driver.Base):
         self.s_remove(path)
 
     def get_size(self, path):
+        print 27
         path = self._init_path(path)
         logger.debug("get_size of %s", path)
         r = self.session.lookup(path)

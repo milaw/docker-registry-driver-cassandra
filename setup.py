@@ -9,7 +9,7 @@ except ImportError:
 __author__ = 'Milaw'
 __copyright__ = 'Copyright 2015'
 # __credits__ = []
-__version__ = '0.1.2'
+__version__ = '0.1.4'
 __maintainer__ = 'Milaw'
 __email__ = 'gmilaw@gmail.com'
 __title__ = 'docker-registry-driver-cassandra'
