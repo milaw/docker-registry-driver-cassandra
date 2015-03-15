@@ -6,11 +6,13 @@ import itertools
 import logging
 import time
 import sys
+import json
 
 # cassandra
 from cassandra.cluster import Cluster
 from cassandra.query import dict_factory
 from cassandra.query import SimpleStatement
+from cassandra.query import ValueSequence
 from cassandra.policies import DowngradingConsistencyRetryPolicy
 from cassandra.policies import ConstantReconnectionPolicy
 from cassandra.auth import PlainTextAuthProvider
@@ -122,9 +124,8 @@ class Storage(driver.Base):
                 host.datacenter, host.address)
 
         self.create_schema()
-        time.sleep(3)
-        self.insert_data('test','success','first')
-        self.select_data("test") 
+        time.sleep(5)
+
 
     def create_schema(self):
         print 2
@@ -139,29 +140,21 @@ class Storage(driver.Base):
         self.session.execute("""
             CREATE TABLE IF NOT EXISTS DockerKSpace.DockerImages (
                 key varchar,
-                value text,
+                value blob,
+                imgpath text,
                 tag text,
                 PRIMARY KEY (key) 
             ) WITH caching ='keys_only';
         """)
         logger.debug("TABLE executed!")
 
-    def insert_data(self, key, value, tag):
-        print 3
-        insert_statement = self.session.prepare("""
-            INSERT INTO DockerKSpace.DockerImages (key, value, tag)
-            VALUES (?, ?, ?);
+        # CREATE INDEX IMGPATH
+        self.session.execute("""
+            CREATE INDEX IF NOT EXISTS imgpath_index 
+            ON DockerKSpace.DockerImages (imgpath)
         """)
-        self.session.execute(insert_statement.bind((key, value, tag)))
-        logger.info("insert_data DONE")
+        logger.debug("INDEX executed!")    
 
-    def select_data(self, key):
-        print 4
-        results = self.session.execute("""
-            SELECT * FROM DockerKSpace.DockerImages WHERE key = 'test';
-        """)
-        #logger.debug("SELECT DONE")
-        print "results : %s", results       
 
     def _init_path(self, path=None):
         print 5
@@ -169,11 +162,59 @@ class Storage(driver.Base):
         logger.debug("Using path %s", path)
         return path
 
+
     def disconnect_to_cluster(self):
         print 6
         self.cluster.shutdown()
         self.session.shutdown()
         logger.info('Connection closed')
+
+
+    def data_read(self, path, offset=0, size=0):
+        print 9
+        logger.debug("path to read : %s", path)
+        results = self.session.execute(\
+            "SELECT * FROM DockerKSpace.DockerImages WHERE imgpath = %s LIMIT 1", (path, ))
+        print results
+        if not results:
+            raise exceptions.FileNotFoundError("File not found %s" % path)
+
+        return results
+
+
+    def data_write(self, key, value, tag):
+        print 10
+        logger.debug("put_content %s %d", key, len(value))
+
+        insert_statement = self.session.prepare("""
+            INSERT INTO DockerKSpace.DockerImages (key, value, imgpath, tag)
+            VALUES (?, ?, ?, ?);
+        """)
+        results = self.session.execute(insert_statement.bind((key, value, key, tag)))
+
+        if fail:
+            raise exceptions.UnspecifiedError("Index setting failed %s" % err)
+        return results
+
+    def data_write_content(self, path, content):
+        print 12
+        tag, _, _ = path.rpartition('/')
+        if len(content) == 0:
+            content = "EMPTY"
+        logger.debug("put_content: write %s with tag %s", path, tag)
+        self.data_write(path, content, ('docker', tag))
+        return path
+
+
+
+
+
+
+
+
+
+
+
 
     def data_remove(self, key):
         print 8
@@ -183,29 +224,11 @@ class Storage(driver.Base):
         if fail:
             raise exceptions.FileNotFoundError("No such file %s" % key)
 
-    def data_read(self, path, offset=0, size=0):
-        print 9
-        query = "SELECT first_name, last_name FROM " + DEFAULT_TABLE_NAME + " WHERE empID IN (105, 107, 104);"
-        rows = self.session.execute(query)
-        return
-
-    def data_write(self, key, value, tags):
-        print 10
-        fail = False
-        query = "INSERT INTO " + DEFAULT_TABLE_NAME + " (key,value,tag) VALUES (" + key + "," + value + "," + tag + ") IF NOT EXISTS"
-        rows = self.session.execute(query)
-        if fail:
-            raise exceptions.UnspecifiedError("Index setting failed %s" % err)
-
     def data_append(self, key, content):
         print 11
         fail = False
         if fail:
             raise exceptions.UnspecifiedError("Writing failed {0}".format(err))
-
-    def data_write_file(self, path, content):
-        print 12
-        return
 
     def data_find(self, tags):
         print 13
@@ -220,18 +243,14 @@ class Storage(driver.Base):
     def get_content(self, path):
         print 20
         path = self._init_path(path)
-        logger.debug("get_content %s ", path)
-        try:
-            return self.data_read(path)
-        except Exception:
-            raise exceptions.FileNotFoundError("File not found %s" % path)
+        return self.data_read(path)
 
     @lru.set
     def put_content(self, path, content):
         print 21
-        path = self._init_path(path)
+        #path = self._init_path(path)
         logger.debug("put_content %s %d", path, len(content))
-        return self.data_write_file(path, content)
+        return self.data_write_content(path, content)
 
     def stream_write(self, path, fp):
         print 22
@@ -247,7 +266,7 @@ class Storage(driver.Base):
                 if not first_chunk:
                     self.data_append(path, buf)
                 else:
-                    self.data_write_file(path, buf)
+                    self.data_write_content(path, buf)
                     first_chunk = False
 
             except IOError as err:
