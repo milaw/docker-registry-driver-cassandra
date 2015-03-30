@@ -7,6 +7,7 @@ import logging
 import time
 import sys
 import json
+import os
 
 # cassandra
 from cassandra.cluster import Cluster
@@ -39,13 +40,15 @@ logger = logging.getLogger(__name__)
 class Storage(driver.Base):
 
     def __init__(self, path=None, config=None):
-        print 1
+        print "__init__--------------------------------------------------"
         # Turn on streaming support
         self.supports_bytes_range = True
         # Increase buffer size up to 640 Kb
         self.buffer_size = 128 * 1024
         # Create default Cassandra config
-        self._root_path = config.storage_path or '/'
+        self._root_path = '/'
+        if not self._root_path.endswith('/'):
+            self._root_path += '/'
 
         self._clusters_list = (config.cassandra_clusters_list or
                                DEFAUL_CLUSTERS_LIST)
@@ -128,7 +131,7 @@ class Storage(driver.Base):
 
 
     def create_schema(self):
-        print 2
+        print "__init__--------------------------------------------------"
          # CREATE KEYSPACE
         self.session.execute("""
             CREATE KEYSPACE IF NOT EXISTS DockerKSpace
@@ -136,196 +139,186 @@ class Storage(driver.Base):
         """)
         logger.debug("KEYSPACE executed!")
         
-        # CREATE TABLE
+        # CREATE TABLES
+        self.session.execute("""
+            CREATE TABLE IF NOT EXISTS DockerKSpace.DockerRepositories (
+                key varchar,
+                value varchar,
+                PRIMARY KEY (key) 
+            ) WITH caching ='keys_only';
+        """)
         self.session.execute("""
             CREATE TABLE IF NOT EXISTS DockerKSpace.DockerImages (
                 key varchar,
-                value blob,
-                imgpath text,
-                tag text,
+                imageid varchar,
+                value varchar,                
                 PRIMARY KEY (key) 
             ) WITH caching ='keys_only';
         """)
         logger.debug("TABLE executed!")
 
-        # CREATE INDEX IMGPATH
-        self.session.execute("""
-            CREATE INDEX IF NOT EXISTS imgpath_index 
-            ON DockerKSpace.DockerImages (imgpath)
-        """)
-        logger.debug("INDEX executed!")    
 
 
     def _init_path(self, path=None):
-        print 5
-        path = self._root_path + path if path else self._root_path
-        logger.debug("Using path %s", path)
+        path = path if path else self._root_path
         return path
 
+    def get_image_id(self, path):
+        s_path = path.split("/")
+        imageid = s_path[len(s_path)-2]
+        return imageid
+
+    def get_state(self, path):
+        s_path = path.split("/")
+        state = s_path[len(s_path)-1]
+        return state
 
     def disconnect_to_cluster(self):
-        print 6
         self.cluster.shutdown()
         self.session.shutdown()
         logger.info('Connection closed')
 
 
     def data_read(self, path, offset=0, size=0):
-        print 9
-        logger.debug("path to read : %s", path)
-        results = self.session.execute(\
-            "SELECT * FROM DockerKSpace.DockerImages WHERE imgpath = %s LIMIT 1", (path, ))
-        print results
+        print "data_read--------------------------------------------------"
+        state = self.get_state(path)
+        print state
+
+        if "repositories" in path:
+            print "repositories inside"
+            results = self.session.execute(\
+                "SELECT value FROM DockerKSpace.DockerRepositories WHERE key = %s LIMIT 1", (path, ))
+        else:
+            print "images inside"
+            results = self.session.execute(\
+                "SELECT value FROM DockerKSpace.DockerImages WHERE key = %s LIMIT 1", (path, ))
+            print results
+
         if not results:
+            print "throw execption for not found"
             raise exceptions.FileNotFoundError("File not found %s" % path)
-
         return results
 
-
-    def data_write(self, key, value, tag):
-        print 10
-        logger.debug("put_content %s %d", key, len(value))
-
-        insert_statement = self.session.prepare("""
-            INSERT INTO DockerKSpace.DockerImages (key, value, imgpath, tag)
-            VALUES (?, ?, ?, ?);
-        """)
-        results = self.session.execute(insert_statement.bind((key, value, key, tag)))
-
-        if fail:
-            raise exceptions.UnspecifiedError("Index setting failed %s" % err)
-        return results
 
     def data_write_content(self, path, content):
-        print 12
-        tag, _, _ = path.rpartition('/')
-        if len(content) == 0:
-            content = "EMPTY"
-        logger.debug("put_content: write %s with tag %s", path, tag)
-        self.data_write(path, content, ('docker', tag))
-        return path
+        print "data_write_content--------------------------------------------------"
+        state = self.get_state(path)
+        logger.debug("put_content: write %s with content %s and state %s", path, content, state)
+        if "repositories" in path:
+            print "repositories inside"
+            if not state is '_private':
+                results = self.session.execute("INSERT INTO DockerKSpace.DockerRepositories (key, value) VALUES (%s, %s)", (path, content))
+        else:
+            imageid = self.get_image_id(path)
+            print "images inside"
+            if not (state is '_checksum') and not state.startswith('_'):
+                print "images IF inside"
+                results = self.session.execute("INSERT INTO DockerKSpace.DockerImages (key, imageid, value) VALUES (%s, %s, %s)", (path, imageid, content))
 
 
-
-
-
-
-
-
-
-
-
-
-    def data_remove(self, key):
-        print 8
-        fail = False
-        query = "DELETE FROM " + DEFAULT_TABLE_NAME + " WHERE key IN ('" + key + "');"
-        rows = self.session.execute(query)
-        if fail:
-            raise exceptions.FileNotFoundError("No such file %s" % key)
-
-    def data_append(self, key, content):
-        print 11
-        fail = False
-        if fail:
-            raise exceptions.UnspecifiedError("Writing failed {0}".format(err))
-
-    def data_find(self, tags):
-        print 13
-        r = self._session.find_all_indexes(list(tags))
-        r.wait()
-        result = r.get()
-        return [str(i.indexes[0].data) for i in itertools.chain(result)]
-
+    # -------------------------------------------------------------------------
     # DOCKER REGISTRY IMPLEMENTATION
-
+    # -------------------------------------------------------------------------
     @lru.get
     def get_content(self, path):
-        print 20
+        print "get_content--------------------------------------------------"
         path = self._init_path(path)
+        logger.debug("path to read : %s", path)
         return self.data_read(path)
 
     @lru.set
     def put_content(self, path, content):
-        print 21
-        #path = self._init_path(path)
-        logger.debug("put_content %s %d", path, len(content))
-        return self.data_write_content(path, content)
+        print "put_content--------------------------------------------------"
+        results = self.data_write_content(path, content)
+        return path
+
+    def exists(self, path):
+        print "exists--------------------------------------------------"
+        try:
+            self.data_read(path)
+        except exceptions.FileNotFoundError:
+            logger.debug("%s doesn't exist", path)
+            return False
+        else:
+            logger.debug("%s exists", path)
+        return True
 
     def stream_write(self, path, fp):
-        print 22
-        logger.debug("stream_write %s", path)
-        first_chunk = True
+        print "stream_write--------------------------------------------------"
+        logger.debug("path to read : %s", path)
+        insert_statement = self.session.prepare("""
+            INSERT INTO DockerKSpace.DockerImages (key, imageid, value)
+            VALUES (?, ?, ?);
+        """)
+        imageid = self.get_image_id(path)
         while True:
             try:
                 path = self._init_path(path)
                 buf = fp.read(self.buffer_size)
                 if not buf:
                     break
-
-                if not first_chunk:
-                    self.data_append(path, buf)
                 else:
-                    self.data_write_content(path, buf)
-                    first_chunk = False
+                    self.session.execute(insert_statement.bind((path, imageid, buf)))
 
             except IOError as err:
                 logger.error("unable to read from a given socket %s", err)
                 break
 
+    @lru.remove
+    def remove(self, path):
+        print "remove--------------------------------------------------"
+        state = self.get_state(path)
+        if state is "_inprogress":
+            s_path = os.path.split(path)
+            path = s_path[0]
+            logger.debug("path to remove : %s", path)
+        try:
+            if "repositories" in path:
+                results = self.session.execute(\
+                    "DELETE FROM DockerKSpace.DockerRepositories WHERE key = %s LIMIT 1", (path, ))
+            else:
+                results = self.session.execute(\
+                    "DELETE FROM DockerKSpace.DockerImages WHERE key = %s LIMIT 1", (path, ))
+    
+        except OSError:
+            raise exceptions.FileNotFoundError('%s is not there' % path)
+
+
+
+
+
+
+
     def stream_read(self, path, bytes_range=None):
-        print 23
+        print "stream_read--------------------------------------------------"
         logger.debug("read range %s from %s", str(bytes_range), path)
-        path = self._init_path(path)
+        #path = self._init_path(path)
         if not self.exists(path):
             raise exceptions.FileNotFoundError(
                 'No such directory: \'{0}\''.format(path))
 
         if bytes_range is None:
-            yield self.s_read(path)
+            yield self.data_read(path)
         else:
             offset = bytes_range[0]
             size = bytes_range[1] - bytes_range[0] + 1
-            yield self.s_read(path, offset=offset, size=size)
+            yield self.data_read(path, offset=offset, size=size)
 
     def list_directory(self, path=None):
-        print 24
-        path = self._init_path(path)
+        print "list_directory--------------------------------------------------"
+        #path = self._init_path(path)
         logger.debug("list_directory %s ",path)
         if not self.exists(path) and path:
             raise exceptions.FileNotFoundError(
                 'No such directory: \'{0}\''.format(path))
 
-        for item in self.s_find(('docker', path)):
+        for item in self.data_find(('docker', path)):
             yield item
 
-    def exists(self, path):
-        print 25
-        path = self._init_path(path)
-        logger.debug("Check existance of %s", path)
-        try:
-            self.data_read(path, 0, 1)
-        except exceptions.FileNotFoundError:
-            logger.debug("%s doesn't exist", path)
-            return False
-        else:
-            logger.debug("%s exists", path)
-            return True
-
-    @lru.remove
-    def remove(self, path):
-        print 26
-        path = self._init_path(path)
-        try:
-            for item in self.list_directory(path):
-                self.s_remove(item)
-        except exceptions.FileNotFoundError as err:
-            logger.warning(err)
-        self.s_remove(path)
 
     def get_size(self, path):
-        print 27
-        path = self._init_path(path)
+        print "get_size--------------------------------------------------"
+        #path = self._init_path(path)
         logger.debug("get_size of %s", path)
         r = self.session.lookup(path)
         r.wait()
