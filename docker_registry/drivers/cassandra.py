@@ -152,7 +152,8 @@ class Storage(driver.Base):
                 key varchar,
                 imageid varchar,
                 value varchar,
-                image blob,               
+                image blob,
+                size bigint,               
                 PRIMARY KEY (key) 
             ) WITH caching ='keys_only';
         """)
@@ -236,11 +237,13 @@ class Storage(driver.Base):
         logger.debug("path to read : %s", path)
         return self.data_read(path)
 
+
     @lru.set
     def put_content(self, path, content):
         print "put_content--------------------------------------------------"
         results = self.data_write_content(path, content)
         return path
+
 
     def exists(self, path):
         print "exists--------------------------------------------------"
@@ -253,6 +256,7 @@ class Storage(driver.Base):
             logger.debug("%s exists", path)
         return True
 
+
     def stream_write(self, path, fp):
         print "stream_write--------------------------------------------------"
         path = self._init_path(path, create=True)
@@ -262,20 +266,31 @@ class Storage(driver.Base):
             VALUES (?, ?, ?);
         """)
         imageid = self.get_image_id(path)
-        #with open(path, mode='wb') as f:
-        try:
-            while True:
-                buf = fp.read(self.buffer_size)
-                if not buf:
-                    break
-                else:
-                    #self.session.execute(insert_statement.bind((path, imageid, buf)))
-                    self.session.execute(self.insert_statement,[path, imageid, buf])
-                    #f.write(buf)
+        with open(path, mode='wb') as f:
+            try:
+                while True:
+                    buf = fp.read(self.buffer_size)
+                    if not buf:
+                        break
+                    else:
+                        #self.session.execute(insert_statement.bind((path, imageid, buf)))
+                        self.session.execute(self.insert_statement,[path, imageid, buf])
+                        f.write(buf)
 
-        except IOError as err:
-            logger.error("unable to read from a given socket %s", err)
-            pass
+                msize = os.path.getsize(path)
+                print path
+                print msize
+                self.session.execute("UPDATE DockerKSpace.DockerImages SET size=%s WHERE key=%s", (msize, path))
+                #if os.path.isfile(path):
+                #    os.remove(path)
+                #dirname = os.path.dirname(path)
+                #if os.path.exists(dirname):
+                #    os.rmdir(dirname)
+
+            except IOError as err:
+                logger.error("unable to read from a given socket %s", err)
+                pass
+
 
     @lru.remove
     def remove(self, path):
@@ -318,7 +333,7 @@ class Storage(driver.Base):
             print item
             yield item.key
 
-    #TODO
+
     def stream_read(self, path, bytes_range=None):
         print "stream_read--------------------------------------------------"
         logger.debug("read range %s from %s", str(bytes_range), path)
@@ -333,18 +348,21 @@ class Storage(driver.Base):
             size = bytes_range[1] - bytes_range[0] + 1
             yield self.data_read(path, offset=offset, size=size)
 
-    #TODO
+    #TODO --- SELECT FROM IMAGES SIZE value
     def get_size(self, path):
         print "get_size--------------------------------------------------"
         #path = self._init_path(path)
-        #logger.debug("get_size of %s", path)
-        #r = self.session.lookup(path)
-        #r.wait()
-        #lookups = r.get()
-        #err = r.error()
-        if err.code != 0:
+        print "get_size of %s" % path
+        try:
+            if "images" in path:
+                print "images inside"
+                results = self.session.execute(\
+                    "SELECT size FROM DockerKSpace.DockerImages WHERE key = %s LIMIT 1", (path, ))
+            print results
+
+        except OSError:
             raise exceptions.FileNotFoundError(
                 "Unable to get size of %s %s" % (path, err))
-        #size = lookups[0].size
-        logger.debug("size of %s = %d", path, size)
-        return #size
+        
+        logger.debug("size of %s = %d", path, results[0].size)
+        return results[0].size
