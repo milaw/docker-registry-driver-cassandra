@@ -9,7 +9,7 @@ except ImportError:
 __author__ = 'Milaw'
 __copyright__ = 'Copyright 2015'
 # __credits__ = []
-__version__ = '0.1.4'
+__version__ = '1.0.0'
 __maintainer__ = 'Milaw'
 __email__ = 'gmilaw@gmail.com'
 __title__ = 'docker-registry-driver-cassandra'
@@ -28,7 +28,7 @@ setuptools.setup(
     url=__url__,
     download_url=__d__,
     description=__description__,
-    classifiers=['Development Status :: 3 - Alpha',
+    classifiers=['Development Status :: 4 - Beta',
                  'Intended Audience :: Developers',
                  'Programming Language :: Python',
                  'Operating System :: OS Independent',

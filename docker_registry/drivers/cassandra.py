@@ -348,7 +348,7 @@ class Storage(driver.Base):
             size = bytes_range[1] - bytes_range[0] + 1
             yield self.data_read(path, offset=offset, size=size)
 
-    #TODO --- SELECT FROM IMAGES SIZE value
+
     def get_size(self, path):
         print "get_size--------------------------------------------------"
         #path = self._init_path(path)
