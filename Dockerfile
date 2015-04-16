@@ -20,7 +20,7 @@ RUN \
 
 RUN pip install docker-registry-driver-cassandra
 
-#ADD . /docker-registry-driver-cassandra
-#ADD docker_registry/drivers docker-registry/docker_registry/drivers
+ADD . /docker-registry-driver-cassandra
+ADD docker_registry/drivers docker-registry/docker_registry/drivers
 #ENV DOCKER_REGISTRY_CONFIG /docker-registry-driver-cassandra/config/config.yml
 #ENV SETTINGS_FLAVOR cassandra
