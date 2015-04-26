@@ -9,6 +9,9 @@ import sys
 import json
 import os
 import threading
+import fcntl
+
+#from multiprocessing import Process, Lock
 
 # cassandra
 from cassandra.cluster import Cluster
@@ -37,104 +40,124 @@ DEFAULT_SESSION_TIMEOUT = 10
 DEFAULT_SESSION_FETCH_SIZE = 5000
 
 logger = logging.getLogger(__name__)
-initiate = False
+#lock = threading.Lock()
+#initiate=False
+
+class Lock:
+    
+    def __init__(self, filename):
+        self.filename = filename
+        # This will create it if it does not exist already
+        self.handle = open(filename, 'w')
+    
+    # Bitwise OR fcntl.LOCK_NB if you need a non-blocking lock 
+    def acquire(self):
+        fcntl.flock(self.handle, fcntl.LOCK_EX)
+        
+    def release(self):
+        fcntl.flock(self.handle, fcntl.LOCK_UN)
+        
+    def __del__(self):
+        self.handle.close()
 
 class Storage(driver.Base):
 
     def __init__(self, path=None, config=None):
+
         try:
+            lock = Lock("/tmp/lock_name.tmp")
+            lock.acquire()
+            print "__init__lock--------------------------------------------------"
+            # Turn on streaming support
+            self.supports_bytes_range = True
+            # Increase buffer size up to 640 Kb
+            self.buffer_size = 128 * 1024
+            # Create default Cassandra config
+            self._root_path = '/'
+            if not self._root_path.endswith('/'):
+                self._root_path += '/'
 
-                print "__init__--------------------------------------------------"
-                # Turn on streaming support
-                self.supports_bytes_range = True
-                # Increase buffer size up to 640 Kb
-                self.buffer_size = 128 * 1024
-                # Create default Cassandra config
-                self._root_path = '/'
-                if not self._root_path.endswith('/'):
-                    self._root_path += '/'
+            self._clusters_list = (config.cassandra_clusters_list or
+                                   DEFAUL_CLUSTERS_LIST)
+            # If a specific version of CQL should be used, otherwise, the highest
+            # CQL version supported by the server will be automatically used
+            self._cql_version = (config.cassandra_cql_version or
+                                 DEFAUL_CQL_VERSION)
+            # The version of the native protocol to use
+            self._protocol_version = (config.cassandra_protocol_version or
+                                      DEFAULT_PROTOCOL_VERSION)
+            # The server-side port to open connections to. Defaults to 9042
+            self._port = config.cassandra_port or DEFAULT_PORT
+            # Controls compression for communications between the driver
+            # and Cassandra. If left as the default of True
+            self._compression = (config.cassandra_compression or
+                                 DEFAULT_COMPRESSION)
+            # Authentification
+            self._authentication_provider = (config.cassandra_authentication_provider or
+                                             DEFAULT_AUTHENTICATION_PROVIDER)
+            self._authentication_username = (config.cassandra_authentication_username or
+                                             DEFAULT_AUTHENTICATION_INFO)
+            self._authentication_password = (config.cassandra_authentication_password or
+                                             DEFAULT_AUTHENTICATION_INFO)
+            # A default timeout, measured in seconds, for queries executed
+            # through execute() or execute_async()
+            # This timeout currently has no effect on callbacks registered
+            # on a ResponseFuture through
+            # ResponseFuture.add_callback() or ResponseFuture.add_errback();
+            # even if a query exceeds this default timeout,
+            # neither the registered callback or errback will be called.cluster
+            self._session_timeout = (config.cassandra_session_timeout or
+                                     DEFAULT_SESSION_TIMEOUT)
+            # By default, this many rows will be fetched at a time.
+            # Setting this to None will
+            # disable automatic paging for large query results
+            self._session_fetch_size = (config.cassandra_session_fetch_size or
+                                        DEFAULT_SESSION_FETCH_SIZE)
 
-                self._clusters_list = (config.cassandra_clusters_list or
-                                       DEFAUL_CLUSTERS_LIST)
-                # If a specific version of CQL should be used, otherwise, the highest
-                # CQL version supported by the server will be automatically used
-                self._cql_version = (config.cassandra_cql_version or
-                                     DEFAUL_CQL_VERSION)
-                # The version of the native protocol to use
-                self._protocol_version = (config.cassandra_protocol_version or
-                                          DEFAULT_PROTOCOL_VERSION)
-                # The server-side port to open connections to. Defaults to 9042
-                self._port = config.cassandra_port or DEFAULT_PORT
-                # Controls compression for communications between the driver
-                # and Cassandra. If left as the default of True
-                self._compression = (config.cassandra_compression or
-                                     DEFAULT_COMPRESSION)
-                # Authentification
-                self._authentication_provider = (config.cassandra_authentication_provider or
-                                                 DEFAULT_AUTHENTICATION_PROVIDER)
-                self._authentication_username = (config.cassandra_authentication_username or
-                                                 DEFAULT_AUTHENTICATION_INFO)
-                self._authentication_password = (config.cassandra_authentication_password or
-                                                 DEFAULT_AUTHENTICATION_INFO)
-                # A default timeout, measured in seconds, for queries executed
-                # through execute() or execute_async()
-                # This timeout currently has no effect on callbacks registered
-                # on a ResponseFuture through
-                # ResponseFuture.add_callback() or ResponseFuture.add_errback();
-                # even if a query exceeds this default timeout,
-                # neither the registered callback or errback will be called.cluster
-                self._session_timeout = (config.cassandra_session_timeout or
-                                         DEFAULT_SESSION_TIMEOUT)
-                # By default, this many rows will be fetched at a time.
-                # Setting this to None will
-                # disable automatic paging for large query results
-                self._session_fetch_size = (config.cassandra_session_fetch_size or
-                                            DEFAULT_SESSION_FETCH_SIZE)
+            # default value is None. It means `do not use auth`
+            auth_provider = None
+            if self._authentication_provider:
+                auth_provider = PlainTextAuthProvider(
+                    username=self._authentication_username,
+                    password=self._authentication_password)
 
-                # default value is None. It means `do not use auth`
-                auth_provider = None
-                if self._authentication_provider:
-                    auth_provider = PlainTextAuthProvider(
-                        username=self._authentication_username,
-                        password=self._authentication_password)
+            # The set of IP addresses we pass to the Cluster is simply an initial
+            # set of contact points.
+            # After the driver connects to one of these nodes
+            # it will automatically discover the rest of
+            # the nodes in the cluster and connect to them,
+            # so you don't need to list every node in your cluster.
+            raw_clusters_list = self._clusters_list
+            if raw_clusters_list is None:
+                raise exceptions.ConfigError("clusters_list must be specified")
+            elif isinstance(raw_clusters_list, (tuple, list)):
+                clusters_list = tuple(raw_clusters_list)
+            elif isinstance(raw_clusters_list, (str, unicode)):
+                # assume we have spaceseparated string
+                clusters_list = tuple(raw_clusters_list.split())
+            else:
+                raise exceptions.ConfigError("clusters_list must be list,"
+                                             "tuple or string")
+            logger.debug("cluster list %s", str(clusters_list))
+            self.cluster = Cluster(clusters_list,
+                                   port=self._port,
+                                   protocol_version=self._protocol_version,
+                                   auth_provider=auth_provider,
+                                   default_retry_policy=DowngradingConsistencyRetryPolicy(),
+                                   reconnection_policy=ConstantReconnectionPolicy(20.0, 10))
+            
+            self.metadata = self.cluster.metadata
+            self.session = self.cluster.connect()
+            
+            for host in self.metadata.all_hosts():
+                logger.info('Datacenter: %s; Host: %s',
+                    host.datacenter, host.address)
 
-                # The set of IP addresses we pass to the Cluster is simply an initial
-                # set of contact points.
-                # After the driver connects to one of these nodes
-                # it will automatically discover the rest of
-                # the nodes in the cluster and connect to them,
-                # so you don't need to list every node in your cluster.
-                raw_clusters_list = self._clusters_list
-                if raw_clusters_list is None:
-                    raise exceptions.ConfigError("clusters_list must be specified")
-                elif isinstance(raw_clusters_list, (tuple, list)):
-                    clusters_list = tuple(raw_clusters_list)
-                elif isinstance(raw_clusters_list, (str, unicode)):
-                    # assume we have spaceseparated string
-                    clusters_list = tuple(raw_clusters_list.split())
-                else:
-                    raise exceptions.ConfigError("clusters_list must be list,"
-                                                 "tuple or string")
-                logger.debug("cluster list %s", str(clusters_list))
-                self.cluster = Cluster(clusters_list,
-                                       port=self._port,
-                                       protocol_version=self._protocol_version,
-                                       auth_provider=auth_provider,
-                                       default_retry_policy=DowngradingConsistencyRetryPolicy(),
-                                       reconnection_policy=ConstantReconnectionPolicy(20.0, 10))
-                
-                self.metadata = self.cluster.metadata
-                self.session = self.cluster.connect()
-                
-                for host in self.metadata.all_hosts():
-                    logger.info('Datacenter: %s; Host: %s',
-                        host.datacenter, host.address)
-
-                self.create_schema()
-                
+            self.create_schema()
+            lock.release()
 
         finally:
-            
+            lock.release()
 
 
     def create_schema(self):
@@ -170,7 +193,6 @@ class Storage(driver.Base):
             CREATE INDEX IF NOT EXISTS index_type ON DockerKSpace.DockerRepositories (type);
         """)
         logger.debug("INDEX executed!")
-        initiate = True
 
 
     def _init_path(self, path=None, create=False):
@@ -292,7 +314,7 @@ class Storage(driver.Base):
                         break
                     else:
                         #self.session.execute(insert_statement.bind((path, imageid, buf)))
-                        print buf.len()
+                        #print buf.len()
                         self.session.execute(self.insert_statement,[path, imageid, buf])
                         f.write(buf)
 
