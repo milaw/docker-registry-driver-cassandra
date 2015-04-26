@@ -37,15 +37,13 @@ DEFAULT_SESSION_TIMEOUT = 10
 DEFAULT_SESSION_FETCH_SIZE = 5000
 
 logger = logging.getLogger(__name__)
-lock = threading.Lock()
 initiate = False
 
 class Storage(driver.Base):
 
     def __init__(self, path=None, config=None):
         try:
-            lock.acquire()
-            if not initiate:
+
                 print "__init__--------------------------------------------------"
                 # Turn on streaming support
                 self.supports_bytes_range = True
@@ -133,14 +131,14 @@ class Storage(driver.Base):
                         host.datacenter, host.address)
 
                 self.create_schema()
-                initiate=True
+                
 
         finally:
-            lock.release()
+            
 
 
     def create_schema(self):
-        print "__init__--------------------------------------------------"
+        print "__schema__--------------------------------------------------"
          # CREATE KEYSPACE
         self.session.execute("""
             CREATE KEYSPACE IF NOT EXISTS DockerKSpace
