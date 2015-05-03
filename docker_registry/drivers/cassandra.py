@@ -142,6 +142,8 @@ class Storage(driver.Base):
             self.cluster = Cluster(clusters_list,
                                    port=self._port,
                                    protocol_version=self._protocol_version,
+                                   idle_heartbeat_interval=300,
+                                   control_connection_timeout=60.0,
                                    auth_provider=auth_provider,
                                    default_retry_policy=DowngradingConsistencyRetryPolicy(),
                                    reconnection_policy=ConstantReconnectionPolicy(20.0, 10))
@@ -245,6 +247,7 @@ class Storage(driver.Base):
         print path
         results = self.session.execute(\
             "SELECT image FROM DockerKSpace.DockerImages WHERE key = %s LIMIT 1", (path, ))
+        print results
         data_image=str(results[0].image)
         return data_image
 
@@ -302,35 +305,30 @@ class Storage(driver.Base):
         path = self._init_path(path, create=True)
         logger.debug("path to read : %s", path)
         self.insert_statement = self.session.prepare("""
-            INSERT INTO DockerKSpace.DockerImages (key, imageid, image)
-            VALUES (?, ?, ?);
+            INSERT INTO DockerKSpace.DockerImages (key, imageid, size, image)
+            VALUES (?, ?, ?, ?);
         """)
         imageid = self.get_image_id(path)
-        with open(path, mode='wb') as f:
-            try:
-                while True:
-                    buf = fp.read(self.buffer_size)
-                    if not buf:
-                        break
-                    else:
-                        #self.session.execute(insert_statement.bind((path, imageid, buf)))
-                        #print buf.len()
-                        self.session.execute(self.insert_statement,[path, imageid, buf])
-                        f.write(buf)
+        bufls = []
+        try:
+            while True:
+                buf = fp.read(self.buffer_size)
+                if not buf:
+                    break
+                else:
+                    bufls.append(buf)
+                
+            res=b''.join(bufls)
+            bsize=len(res)
+            res0=self.session.execute(self.insert_statement,[path, imageid, bsize, res])
+            if not res0:
+                print 'res0 is empty'
+            else:
+                print 'res0 not empty'
 
-                msize = os.path.getsize(path)
-                print path
-                print msize
-                self.session.execute("UPDATE DockerKSpace.DockerImages SET size=%s WHERE key=%s", (msize, path))
-                if os.path.isfile(path):
-                    os.remove(path)
-                dirname = os.path.dirname(path)
-                if os.path.exists(dirname):
-                    os.rmdir(dirname)
-
-            except IOError as err:
-                logger.error("unable to read from a given socket %s", err)
-                pass
+        except IOError as err:
+            logger.error("unable to read from a given socket %s", err)
+            pass
 
 
     @lru.remove
@@ -383,7 +381,12 @@ class Storage(driver.Base):
                 'No such directory: \'{0}\''.format(path))
 
         if bytes_range is None:
-            yield self.data_sread(path)
+            tdata = self.data_sread(path)
+            path = self._init_path(path, create=True)
+            with open(path, mode='wb') as f:
+                f.write(tdata)
+                msize = os.path.getsize(path)
+                yield tdata
         else:
             offset = bytes_range[0]
             size = bytes_range[1] - bytes_range[0] + 1
@@ -399,9 +402,12 @@ class Storage(driver.Base):
                 print "images inside"
                 results = self.session.execute(\
                     "SELECT size FROM DockerKSpace.DockerImages WHERE key = %s LIMIT 1", (path, ))
+            if not results:
+                raise exceptions.FileNotFoundError(
+                "Image not found: %s " % (path))
             print results
 
-        except OSError:
+        except OSError as err:
             raise exceptions.FileNotFoundError(
                 "Unable to get size of %s %s" % (path, err))
         
