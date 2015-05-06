@@ -15,10 +15,10 @@ RUN \
 	pip install cassandra-driver
 
 # Install driver
-#COPY . /src
-#RUN pip install /src
+COPY . /src
+RUN pip install /src
 
-RUN pip install docker-registry-driver-cassandra
+#RUN pip install docker-registry-driver-cassandra
 
 ADD . /docker-registry-driver-cassandra
 ADD docker_registry/drivers docker-registry/docker_registry/drivers
